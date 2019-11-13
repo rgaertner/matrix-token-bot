@@ -1,0 +1,15 @@
+{
+  "name": "matrix-token-bot",
+  "version": "1.0.0",
+  "description": "Matrix bot used to accept a token",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Ronny Gärtner",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^8.2.0",
+    "matrix-js-sdk": "^2.4.3"
+  }
+}
