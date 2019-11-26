@@ -4,12 +4,27 @@
   "description": "Matrix bot used to accept a token",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "start:debug": "node --inspect-brk -r esm -r ts-node/register index.ts",
+    "client": "ts-node client.ts",
+    "compile": "tsc -b",
+    "test": "jest"
   },
   "author": "Ronny Gärtner",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^8.2.0",
-    "matrix-js-sdk": "^2.4.3"
+    "matrix-js-sdk": "^2.4.3",
+    "rxjs": "^6.5.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^24.0.23",
+    "@types/node": "^12.12.8",
+    "@types/uuid": "^3.4.6",
+    "esm": "^3.2.25",
+    "jest": "^24.9.0",
+    "ts-jest": "^24.2.0",
+    "ts-node": "^8.5.2",
+    "typescript": "^3.7.2"
   }
 }
