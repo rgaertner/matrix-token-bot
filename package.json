@@ -8,7 +8,7 @@
     "start:debug": "node --inspect-brk -r esm -r ts-node/register index.ts",
     "client": "ts-node client.ts",
     "compile": "tsc -b",
-    "test": "jest"
+    "test": "jest -c jest.unit.js"
   },
   "author": "Ronny Gärtner",
   "license": "ISC",

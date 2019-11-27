@@ -1,10 +1,9 @@
-var sdk = require("matrix-js-sdk");
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as uuid from "uuid";
 import { Subject } from "rxjs";
-import { textSpanIsEmpty, textSpanContainsPosition } from "typescript";
 
+const sdk = require("matrix-js-sdk");
 dotenv.config({ path: ".env" });
 
 const fromEnv = (envVar: string) => {
