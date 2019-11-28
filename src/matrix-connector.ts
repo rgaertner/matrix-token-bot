@@ -54,17 +54,20 @@ export class MatrixConnector {
       accessToken: this.config.accessToken,
       userId: this.config.userId
     });
-    this.client.on('Room.timeline', (event: any, room: string) => {
+    this.client.on('Room.timeline', (event: any, room: any, toStartOfTimeLine: boolean, removed: boolean, data: any) => {
       if (event.getType() !== 'm.room.message') {
         return; // only print messages
       }
-      const msg = event.getContent();
-      const age = event.getAge();
       if (
         event.getRoomId() === this.config.roomId &&
         event.getSender() === this.config.userId &&
-        age < 2000
+        !toStartOfTimeLine &&
+        data.liveEvent
       ) {
+        const msg = event.getContent();
+        // const msg = room.timeline[room.timeline.length - 1];
+        console.log('msg ', msg);
+        console.log('data', data);
         this.emit.next({
           type: 'Matrix.Connector.Receive',
           payload: msg,

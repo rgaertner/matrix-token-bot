@@ -200,7 +200,6 @@ genMatrixConnectors().forEach((matrix: MatrixConnector) => {
                   }
                 }
                 if (msg.type === 'Matrix.Connector.Receive') {
-                  console.log('receive', msg);
                   try {
                     sequenceReceive[rSequenceId++](msg);
                     if (rSequenceId === sequenceReceive.length) {
