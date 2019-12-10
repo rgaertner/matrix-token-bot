@@ -1,6 +1,6 @@
 import { MatrixConnectorConfig } from '../matrix-connector';
 
-export const fromEnv = (envVar: string) => {
+export function fromEnv(envVar: string) {
   const val = process.env[envVar];
   if (!val) {
     throw new Error(`Please provide env var ${envVar}`);

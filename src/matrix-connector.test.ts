@@ -1,31 +1,33 @@
 import * as dotenv from 'dotenv';
-import {
-  MatrixConnector,
-  MatrixConnectorConfig,
-  MatrixConnectorEmitgMsg,
-  SentMsg,
-  ReceiveMsg,
-  MatrixMsg
-} from './matrix-connector';
+import { MatrixConnector, MatrixConnectorConfig } from './matrix-connector';
+import { MatrixEvent } from './matrix';
 import { matrixConfig } from './util/env-helper';
-interface MatrixEvent {
-  getType(): string;
-  getContent(): MatrixMsg;
-  getAge(): { age: number };
-  getRoomId(): string;
-  getSender(): string;
-}
+import uuid = require('uuid');
+import {
+  SendMsg,
+  MatrixConnectorEmitgMsg,
+  Payload,
+  SentMsg,
+  ReceiveMsg
+} from './msg';
+
+type EventHandler = (
+  event: MatrixEvent,
+  room: any,
+  toStartOfTimeLine: boolean,
+  removed: boolean,
+  data: any
+) => void;
 class MatrixMockClient {
-  private readonly events: ((event: MatrixEvent) => void)[] = [];
+  private readonly events: EventHandler[] = [];
   public startClient = () => {
     return Promise.resolve();
-  }
+  };
   public on = (type: string, x: any) => {
-    console.log('mock on', x);
-    if (type === 'event') {
+    if (type === 'Room.timeline') {
       this.events.push(x);
     }
-  }
+  };
 
   public stopClient = () => {};
 
@@ -39,24 +41,28 @@ class MatrixMockClient {
     cb(undefined, { roomId, payload: matrixMsg });
     const config = mockMatrixConnectorProps();
     this.events.forEach(x => {
-      x({
-        getContent: () => matrixMsg,
-        getType: () => 'm.room.message',
-        getRoomId: () => config.roomId,
-        getSender: () => config.userId,
-        getAge: () => { return {age: 20}; },
-      });
+      x(
+        {
+          getContent: () => matrixMsg,
+          getType: () => 'm.room.message',
+          getRoomId: () => config.roomId,
+          getSender: () => config.userId,
+          getAge: () => {
+            return { age: 20 };
+          }
+        },
+        roomId,
+        false,
+        false,
+        { liveEvent: true }
+      );
     });
-  }
+  };
 }
 
 function genMatrixConnectors(): MatrixConnector[] {
-  let matrixConnectors = [
-    // new MatrixConnector(
-    //   mockMatrixConnectorProps(),
-    //   mockMatrix(),
-    //   'mockedMatrixConnector'
-    // )
+  const matrixConnectors = [
+    // new MatrixConnector(mockMatrixConnectorProps(), mockMatrix())
   ];
   const testConf = dotenv.config({ path: '.env-test' });
   if (testConf.parsed) {
@@ -64,11 +70,14 @@ function genMatrixConnectors(): MatrixConnector[] {
   }
   return matrixConnectors;
 }
-function genMatrixMsg(body: string): MatrixMsg {
+function genSendMsg(body: string, msgid: string = uuid.v4()): SendMsg {
   return {
-    body,
-    senderid: 'mock' + body,
-    msgtype: 'm.text'
+    type: 'Matrix.Connector.Send',
+    payload: {
+      body,
+      msgtype: 'm.text',
+      msgid
+    }
   };
 }
 
@@ -111,6 +120,7 @@ test('test double start', done => {
   let sequenceId = 0;
   matrix.emit.subscribe((msg: MatrixConnectorEmitgMsg) => {
     try {
+      console.log('emit msg', msg);
       sequence[sequenceId++](msg);
       if (sequenceId === sequence.length) {
         done();
@@ -145,53 +155,40 @@ test('test double start', done => {
   });
 });
 
+function testSendMsg(matrixMsg: Payload, msg: SentMsg) {
+  expect(msg.type).toBe('Matrix.Connector.Sent');
+  expect(msg.payload.body).toEqual(matrixMsg.body);
+  expect(msg.payload.msgid).toEqual(matrixMsg.msgid);
+}
+
+function testReceiveMsg(matrixMsg: Payload, msg: ReceiveMsg) {
+  expect(msg.type).toBe('Matrix.Connector.Receive');
+  expect(msg.payload.body).toEqual(matrixMsg.body);
+  expect(msg.payload.msgid).toEqual(matrixMsg.msgid);
+}
+
 genMatrixConnectors().forEach((matrix: MatrixConnector) => {
-  test(
+  test.only(
     'send data ' + matrix.id,
     (done: jest.DoneCallback) => {
-      const sequence = [
-        (msg: SentMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Sent');
-          expect(msg.payload.body).toEqual('0');
-          return true;
-        },
-        (msg: SentMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Sent');
-          expect(msg.payload.body).toEqual('1');
-          return true;
-        },
-        (msg: SentMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Sent');
-          expect(msg.payload.body).toEqual('2');
-          return true;
-        }
-      ];
-      const sequenceReceive: ((msg: ReceiveMsg) => void)[] = [
-        (msg: ReceiveMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Receive');
-          expect(msg.payload.body).toEqual('0');
-        },
-        (msg: ReceiveMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Receive');
-          expect(msg.payload.body).toEqual('1');
-        },
-        (msg: ReceiveMsg) => {
-          expect(msg.type).toBe('Matrix.Connector.Receive');
-          expect(msg.payload.body).toEqual('2');
-        }
+      const msgs: SendMsg[] = [
+        genSendMsg('0', 'id0'),
+        genSendMsg('1'),
+        genSendMsg('2', 'id2')
       ];
       let sequenceId = 0;
-      let rSequenceId = 0;
+      let rsequenceId = 0;
       const subscription = matrix.emit.subscribe(
         (startMsg: MatrixConnectorEmitgMsg) => {
           if (startMsg.type === 'Matrix.Connector.Started') {
             subscription.unsubscribe();
             const subSend = matrix.emit.subscribe(
               (msg: MatrixConnectorEmitgMsg) => {
+                console.log('emmitted by client ', { msg });
                 if (msg.type === 'Matrix.Connector.Sent') {
                   try {
-                    sequence[sequenceId++](msg as SentMsg);
-                    if (sequenceId <= sequence.length) {
+                    testSendMsg(msgs[sequenceId++].payload, msg);
+                    if (sequenceId <= msgs.length) {
                       return;
                     }
                     fail('Should never be reached, no more tests to run');
@@ -201,13 +198,17 @@ genMatrixConnectors().forEach((matrix: MatrixConnector) => {
                 }
                 if (msg.type === 'Matrix.Connector.Receive') {
                   try {
-                    sequenceReceive[rSequenceId++](msg);
-                    if (rSequenceId === sequenceReceive.length) {
+                    testReceiveMsg(msgs[rsequenceId++].payload, msg);
+                    if (rsequenceId === msgs.length) {
+                      console.log('end receive ', rsequenceId, msgs);
                       subSend.unsubscribe();
                       const stopSub = matrix.emit.subscribe(m => {
                         if (m.type === 'Matrix.Connector.Stopped') {
-                          done();
+                          console.log('call done!!!!');
                           stopSub.unsubscribe();
+                          console.log('call done1!!!!');
+                          done();
+                          console.log('call done2!!!!');
                           return;
                         }
                         done(Error('Never come along here!'));
@@ -218,7 +219,7 @@ genMatrixConnectors().forEach((matrix: MatrixConnector) => {
                       });
                       return;
                     }
-                    if (rSequenceId < sequenceReceive.length) {
+                    if (rsequenceId < msgs.length) {
                       return;
                     }
                     fail('Should never be reached, no more tests to run');
@@ -228,18 +229,8 @@ genMatrixConnectors().forEach((matrix: MatrixConnector) => {
                 }
               }
             );
-            matrix.recv.next({
-              type: 'Matrix.Connector.Send',
-              payload: genMatrixMsg('0')
-            });
-            matrix.recv.next({
-              type: 'Matrix.Connector.Send',
-              payload: genMatrixMsg('1')
-            });
-            matrix.recv.next({
-              type: 'Matrix.Connector.Send',
-              payload: genMatrixMsg('2')
-            });
+
+            msgs.forEach(m => matrix.recv.next(m));
           }
         }
       );

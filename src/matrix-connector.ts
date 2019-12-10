@@ -1,5 +1,7 @@
 import { Subject } from 'rxjs';
 import uuid = require('uuid');
+import { SyncState } from './matrix';
+import { MatrixConnectorRecvMsg, MatrixConnectorEmitgMsg } from './msg';
 
 const matrix = require('matrix-js-sdk');
 
@@ -9,25 +11,6 @@ export interface MatrixConnectorConfig {
   readonly userId: string;
   readonly roomId: string;
 }
-export interface MatrixMsg {
-  body: string;
-  senderid: string;
-  msgtype: string;
-}
-
-export type MatrixConnectorRecvMsg =
-  | Msg<unknown, 'Matrix.Connector.Start'>
-  | Msg<unknown, 'Matrix.Connector.Stop'>
-  | Msg<MatrixMsg, 'Matrix.Connector.Send'>;
-
-export type SentMsg = Msg<MatrixMsg, 'Matrix.Connector.Sent'>;
-export type ReceiveMsg = Msg<MatrixMsg, 'Matrix.Connector.Receive'>;
-export type MatrixConnectorEmitgMsg =
-  | Msg<undefined, 'Matrix.Connector.Started'>
-  | Msg<unknown, 'Matrix.Connector.Stopped'>
-  | Msg<Error, 'Matrix.Connector.Error'>
-  | ReceiveMsg
-  | SentMsg;
 
 export class MatrixConnector {
   public readonly id: string;
@@ -54,42 +37,81 @@ export class MatrixConnector {
       accessToken: this.config.accessToken,
       userId: this.config.userId
     });
-    this.client.on('Room.timeline', (event: any, room: any, toStartOfTimeLine: boolean, removed: boolean, data: any) => {
-      if (event.getType() !== 'm.room.message') {
-        return; // only print messages
-      }
-      if (
-        event.getRoomId() === this.config.roomId &&
-        event.getSender() === this.config.userId &&
-        !toStartOfTimeLine &&
-        data.liveEvent
-      ) {
+    this.client.on(
+      'Room.timeline',
+      (
+        event: any,
+        room: any,
+        toStartOfTimeLine: boolean,
+        removed: boolean,
+        data: any
+      ) => {
+        if (event.getType() !== 'm.room.message') {
+          return; // only print messages
+        }
         const msg = event.getContent();
-        // const msg = room.timeline[room.timeline.length - 1];
-        console.log('msg ', msg);
-        console.log('data', data);
+        if (
+          event.getRoomId() === this.config.roomId &&
+          event.getSender() === this.config.userId
+        ) {
+          if (
+            event.getStatus &&
+            event.getStatus() === matrix.EventStatus.SENDING
+          ) {
+            this.emit.next({
+              type: 'Matrix.Connector.Sent',
+              payload: msg
+            });
+          }
+          this.emit.next({
+            type: 'Matrix.Connector.Receive',
+            payload: msg
+          });
+        }
+      }
+    );
+    this.client.startClient({ initialSyncLimit: 10 }).catch((err: Error) => {
+      this.emit.next({
+        type: 'Matrix.Connector.Error',
+        payload: err
+      });
+    });
+    this.client.on('sync', (state: SyncState, prevState: any, res: any) => {
+      switch (state) {
+        case 'PREPARED': {
+          this.emit.next({
+            type: 'Matrix.Connector.Started',
+            payload: undefined
+          });
+          break;
+        }
+        case 'STOPPED': {
+          this.recv.unsubscribe();
+          this.emit.next({
+            type: 'Matrix.Connector.Stopped',
+            payload: undefined
+          });
+          break;
+        }
+        case 'ERROR': {
+          this.emit.next({
+            type: 'Matrix.Connector.Error',
+            payload: res.error
+          });
+          break;
+        }
+      }
+    });
+    this.client.on('Room.localEchoUpdated', (event: any) => {
+      if (event.status === matrix.EventStatus.SENT) {
+        // this.sendEvents.push(event.getContent().msgid);
         this.emit.next({
           type: 'Matrix.Connector.Receive',
-          payload: msg,
+          payload: event.getContent()
         });
       }
     });
-    this.client
-      .startClient({ initialSyncLimit: 1 })
-      .then((_: any) => {
-        this.emit.next({
-          type: 'Matrix.Connector.Started',
-          payload: undefined
-        });
-      })
-      .catch((err: Error) => {
-        this.emit.next({
-          type: 'Matrix.Connector.Error',
-          payload: err
-        });
-      });
-  }
-
+  };
   private msgHandler = (msg: MatrixConnectorRecvMsg) => {
     switch (msg.type) {
       case 'Matrix.Connector.Start': {
@@ -106,15 +128,15 @@ export class MatrixConnector {
           });
           return;
         }
-        const message: MatrixMsg = {
-          body: msg.payload.body,
-          senderid: this.id,
-          msgtype: 'm.text'
-        };
+
+        console.log(' { ...msg.payload, senderId: this.id }, ', {
+          ...msg.payload,
+          senderId: this.id
+        });
         this.client.sendEvent(
           this.config.roomId,
           'm.room.message',
-          message,
+          { ...msg.payload, senderId: this.id },
           '',
           (err: Error, _: any) => {
             if (err) {
@@ -124,10 +146,6 @@ export class MatrixConnector {
               });
               return;
             }
-            this.emit.next({
-              type: 'Matrix.Connector.Sent',
-              payload: msg.payload
-            });
           }
         );
         break;
@@ -135,14 +153,9 @@ export class MatrixConnector {
       case 'Matrix.Connector.Stop': {
         this.client.stopClient();
         this.client = undefined;
-        this.emit.next({
-          type: 'Matrix.Connector.Stopped',
-          payload: undefined
-        });
-        this.recv.unsubscribe();
       }
     }
-  }
+  };
 
   constructor(config: MatrixConnectorConfig, client = matrix, id = uuid.v4()) {
     this.matrix = client;
