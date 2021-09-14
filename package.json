@@ -15,7 +15,7 @@
   "dependencies": {
     "@types/stream-mock": "^2.0.1",
     "dotenv": "^8.2.0",
-    "matrix-js-sdk": "^2.4.3",
+    "matrix-js-sdk": "^12.4.1",
     "mock-stdin": "^1.0.0",
     "rxjs": "^6.5.3",
     "stream-mock": "^2.0.5"
